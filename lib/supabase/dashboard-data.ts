@@ -1,26 +1,22 @@
 // Server-side cached data fetchers for the dashboard.
-// Using React cache() ensures that multiple Server Components in the same
-// render tree share a single DB result instead of firing duplicate queries.
+// React cache() deduplicates within a single render pass.
+// unstable_cache persists results across requests (cross-request caching).
+//
+// IMPORTANT: unstable_cache cannot use createClient() because it calls cookies().
+// We use createServiceClient() inside cached functions instead.
 
 import { cache } from 'react'
 import { unstable_cache } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { REQUEST_LIST_SELECT } from '@/lib/supabase/selects'
 
-/**
- * Cached wrapper around the get_dashboard_stats RPC.
- * Both DashboardStats and DashboardChartsWrapper use this,
- * so React deduplicates the call within a single render pass.
- */
-export const getDashboardStats = cache(async () => {
-  const t0 = performance.now()
-  const supabase = await createClient()
+// ─── Dashboard Stats ──────────────────────────────────────────────────────────
+
+async function _fetchDashboardStats() {
+  const supabase = await createServiceClient()
   const { data, error } = await supabase.rpc('get_dashboard_stats')
-  console.log(`[PERF] getDashboardStats RPC: ${Math.round(performance.now() - t0)}ms, error: ${!!error}`)
 
   if (error || !data) {
-    console.warn('get_dashboard_stats RPC failed, falling back...')
-    // Fallback: parallel count queries
     const [
       { count: inbox },
       { count: grooming },
@@ -38,7 +34,6 @@ export const getDashboardStats = cache(async () => {
       supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'uat'),
       supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
     ])
-
     return {
       stats: {
         inbox, grooming, pending_approval: pendingApproval, approved,
@@ -49,23 +44,32 @@ export const getDashboardStats = cache(async () => {
     }
   }
 
-  // The enhanced RPC returns { stats: {}, trends: [] }
-  // Handle both old format (flat) and new format (nested)
-  if (data.stats) {
-    return data as { stats: any; trends: any[] }
-  }
-  // Old format fallback (flat object without trends)
+  if (data.stats) return data as { stats: any; trends: any[] }
   return { stats: data, trends: [] }
-})
+}
+
+// Cache for 30s across requests — safe because it uses service client (no cookies)
+const _getCachedStats = unstable_cache(
+  _fetchDashboardStats,
+  ['dashboard-stats-global'],
+  { revalidate: 30 }
+)
 
 /**
- * Cached fetcher for layout notifications. 
- * Consolidates the logic from TopbarWrapper into a single, deduplicated server call.
+ * React-cache deduplicates within a render; unstable_cache persists across requests.
+ */
+export const getDashboardStats = cache(async () => {
+  return _getCachedStats()
+})
+
+// ─── Layout Notifications ─────────────────────────────────────────────────────
+
+/**
+ * Cached fetcher for layout notifications.
+ * Uses createClient() (needs cookies for RLS) — only deduped per-request via React cache.
  */
 export const getLayoutNotifications = cache(async (profile: any) => {
-  const t0 = performance.now()
   const supabase = await createClient()
-  
   const { stageForRole } = await import('@/lib/types')
   const stage = stageForRole(profile.role)
   let notifications: any[] = []
@@ -110,32 +114,23 @@ export const getLayoutNotifications = cache(async (profile: any) => {
     }))
   }
 
-  console.log(`[PERF] getLayoutNotifications: ${Math.round(performance.now() - t0)}ms`)
   return notifications
 })
 
-/**
- * Pre-fetch ALL Super Admin dashboard data in one cached call.
- * This creates a SINGLE Supabase client and runs ALL queries in parallel,
- * eliminating multiple createClient()/cookies() overhead.
- */
-async function _getSuperAdminDashboardData(profile: any) {
-  const t0 = performance.now()
-  const supabase = await createClient()
+// ─── Super Admin Dashboard ────────────────────────────────────────────────────
 
-  // Fire ALL queries in parallel — one client, one cookies() call
-  const [rpcResult, recentResult, notifications] = await Promise.all([
+// Safe to cache — uses service client, no cookies dependency
+async function _fetchSuperAdminData() {
+  const supabase = await createServiceClient()
+
+  const [rpcResult, recentResult] = await Promise.all([
     supabase.rpc('get_dashboard_stats'),
     supabase.from('requests')
       .select(REQUEST_LIST_SELECT)
       .order('created_at', { ascending: false })
       .limit(10),
-    getLayoutNotifications(profile)
   ])
 
-  console.log(`[PERF] getSuperAdminDashboardData (all parallel): ${Math.round(performance.now() - t0)}ms`)
-
-  // Parse RPC
   const rpcData = rpcResult.data
   let dashStats: { stats: any; trends: any[] }
   if (rpcResult.error || !rpcData) {
@@ -149,16 +144,24 @@ async function _getSuperAdminDashboardData(profile: any) {
   return {
     ...dashStats,
     recentRequests: recentResult.data ?? [],
-    notifications,
   }
 }
 
-// Cache dashboard data for 30 seconds across requests — subsequent navigations are instant
+const _getCachedSuperAdminData = unstable_cache(
+  _fetchSuperAdminData,
+  ['dashboard-super-admin-data'],
+  { revalidate: 30 }
+)
+
+/**
+ * Pre-fetch ALL Super Admin dashboard data.
+ * Notifications are fetched separately (needs cookies) and merged.
+ */
 export const getSuperAdminDashboardData = cache(async (profile: any) => {
-  const cached = unstable_cache(
-    () => _getSuperAdminDashboardData(profile),
-    [`dashboard-super-admin-${profile.id}`],
-    { revalidate: 30 }
-  )
-  return cached()
+  // Run cached data-fetch and notification fetch in parallel
+  const [cachedData, notifications] = await Promise.all([
+    _getCachedSuperAdminData(),
+    getLayoutNotifications(profile),
+  ])
+  return { ...cachedData, notifications }
 })
