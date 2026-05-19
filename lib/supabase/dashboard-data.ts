@@ -14,38 +14,51 @@ import { REQUEST_LIST_SELECT } from '@/lib/supabase/selects'
 
 async function _fetchDashboardStats() {
   const supabase = await createServiceClient()
-  const { data, error } = await supabase.rpc('get_dashboard_stats')
 
-  if (error || !data) {
-    const [
-      { count: inbox },
-      { count: grooming },
-      { count: pendingApproval },
-      { count: approved },
-      { count: inSprint },
-      { count: inUat },
-      { count: done },
-    ] = await Promise.all([
-      supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'pending').in('current_stage', ['hod', 'approval']),
-      supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('current_stage', 'admin'),
-      supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('current_stage', 'super_admin'),
-      supabase.from('requests').select('*', { count: 'exact', head: true }).in('status', ['approved', 'sprint', 'uat', 'completed']),
-      supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'sprint'),
-      supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'uat'),
-      supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
-    ])
-    return {
-      stats: {
-        inbox, grooming, pending_approval: pendingApproval, approved,
-        in_sprint: inSprint, in_uat: inUat, done,
-        total: (inbox ?? 0) + (grooming ?? 0) + (pendingApproval ?? 0) + (approved ?? 0),
-      },
-      trends: [],
-    }
+  // Calculate real live stats directly from the table
+  const { data: requests } = await supabase
+    .from('requests')
+    .select('status, current_stage, created_at')
+
+  const allReqs = requests || []
+
+  // Aggregate Stage Distribution
+  const stats = {
+    inbox: allReqs.filter(r => r.status === 'pending' && r.current_stage === 'hod').length,
+    grooming: allReqs.filter(r => r.status === 'pending' && r.current_stage === 'approval').length,
+    pending_approval: allReqs.filter(r => r.status === 'pending' && ['admin', 'super_admin'].includes(r.current_stage)).length,
+    approved: allReqs.filter(r => r.status === 'approved').length,
+    in_sprint: allReqs.filter(r => r.status === 'sprint').length,
+    in_uat: allReqs.filter(r => r.status === 'uat').length,
+    done: allReqs.filter(r => r.status === 'completed').length,
+    total: allReqs.length
   }
 
-  if (data.stats) return data as { stats: any; trends: any[] }
-  return { stats: data, trends: [] }
+  // Aggregate Projects Per Month (Real Data)
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  const trendsMap: Record<string, number> = {}
+
+  allReqs.forEach(r => {
+    const d = new Date(r.created_at)
+    const monthStr = `${monthNames[d.getMonth()]} ${d.getFullYear().toString().slice(-2)}`
+    trendsMap[monthStr] = (trendsMap[monthStr] || 0) + 1
+  })
+
+  // Format into an array sorted by time (for simplicity, we just use the last 6 months)
+  const trends = []
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date()
+    d.setMonth(d.getMonth() - i)
+    const monthStr = `${monthNames[d.getMonth()]} ${d.getFullYear().toString().slice(-2)}`
+    trends.push({
+      month: monthStr,
+      projects: trendsMap[monthStr] || 0,
+      realised: 0,   // Placeholder until financial logic is added
+      unrealised: 0  // Placeholder until financial logic is added
+    })
+  }
+
+  return { stats, trends }
 }
 
 // Cache for 30s across requests — safe because it uses service client (no cookies)
@@ -123,23 +136,13 @@ export const getLayoutNotifications = cache(async (profile: any) => {
 async function _fetchSuperAdminData() {
   const supabase = await createServiceClient()
 
-  const [rpcResult, recentResult] = await Promise.all([
-    supabase.rpc('get_dashboard_stats'),
+  const [dashStats, recentResult] = await Promise.all([
+    _fetchDashboardStats(),
     supabase.from('requests')
       .select(REQUEST_LIST_SELECT)
       .order('created_at', { ascending: false })
       .limit(10),
   ])
-
-  const rpcData = rpcResult.data
-  let dashStats: { stats: any; trends: any[] }
-  if (rpcResult.error || !rpcData) {
-    dashStats = { stats: { inbox: 0, grooming: 0, pending_approval: 0, approved: 0, in_sprint: 0, in_uat: 0, done: 0, total: 0 }, trends: [] }
-  } else if (rpcData.stats) {
-    dashStats = rpcData as { stats: any; trends: any[] }
-  } else {
-    dashStats = { stats: rpcData, trends: [] }
-  }
 
   return {
     ...dashStats,

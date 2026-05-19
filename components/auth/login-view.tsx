@@ -64,9 +64,8 @@ export function LoginView({ initialUser }: Props) {
     }
 
     toast.success('Successfully signed in')
+    router.refresh()
     router.push('/dashboard')
-    // router.refresh() is handled by the middleware redirect/session handling if needed. 
-    // Manual call can be slow in Turbopack.
   }
 
   async function handleSignOut() {
