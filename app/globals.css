@@ -1,0 +1,170 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  /* Brand (ELK-DESA Corporate Red) */
+  --color-brand: #c8102e;
+  --color-brand-50: #fdf2f2;
+  --color-brand-100: #fbe5e5;
+  --color-brand-500: #c8102e;
+  --color-brand-600: #a30d25;
+  --color-brand-700: #7d0a1c;
+
+  /* Slate neutrals (Clean Corporate Grays) */
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+
+  /* Status colors */
+  --color-amber-soft: #f59e0b;
+  --color-red-soft: #ef4444;
+  --color-sky-soft: #0ea5e9;
+  --color-violet-soft: #8b5cf6;
+
+  /* Typography */
+  --font-heading: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+
+  /* Shadows */
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.03), 0 2px 4px rgba(0,0,0,0.03);
+  --shadow-card-hover: 0 2px 4px rgba(0,0,0,0.05), 0 4px 10px rgba(0,0,0,0.05);
+  --shadow-dropdown: 0 4px 20px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+  --shadow-dialog: 0 8px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: #f8fafc;
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(210,100%,98%,1) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(210,100%,99%,1) 0, transparent 50%);
+  color: #0f172a;
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+/* Custom sleek scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* For Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* Focus ring - Using standard browser outline but more subtle */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* Suppress outline for elements that handle focus with rings or borders */
+input:focus, input:focus-visible, 
+button:focus, button:focus-visible, 
+select:focus, select:focus-visible, 
+textarea:focus, textarea:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Selection */
+::selection {
+  background: #dcf4e8;
+  color: #1c1a17;
+}
+
+/* Card base - Premium High Density */
+.card {
+  @apply bg-white border border-slate-200/60 rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.02),0_1px_2px_rgba(0,0,0,0.03)] transition-all duration-300;
+}
+
+.card-hover {
+  @apply hover:shadow-[0_10px_25px_-5px_rgba(0,0,0,0.05),0_8px_10px_-6px_rgba(0,0,0,0.05)] hover:border-slate-300/60 hover:-translate-y-0.5;
+}
+
+/* Pulse animation for current stage */
+@keyframes stage-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+}
+
+.stage-pulse {
+  animation: stage-pulse 2s ease-in-out infinite;
+}
+
+/* Count up animation */
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-count-up {
+  animation: count-up 0.4s ease-out forwards;
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #f1f5f9 25%,
+    #e2e8f0 50%,
+    #f1f5f9 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+
+/* Pipeline connector fill */
+@keyframes fill-line {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
+.pipeline-fill {
+  animation: fill-line 0.6s ease-out forwards;
+}
