@@ -71,7 +71,7 @@ export function QueueView({ initialQueue, userRole, userDepartment }: Props) {
   }, [])
 
   const handleViewRequest = useCallback((request: RequestWithProfile) => {
-    triggerViewRequest(request.id)
+    triggerViewRequest(request.id, request)
   }, [])
 
   const roleLabels: Record<string, string> = {

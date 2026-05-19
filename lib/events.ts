@@ -1,4 +1,5 @@
 import { Priority } from './types'
+import type { RequestWithProfile } from './types'
 
 export const ELK_OPEN_REQUEST_DRAWER = 'elk-open-request-drawer'
 export const ELK_VIEW_REQUEST_DRAWER = 'elk-view-request-drawer'
@@ -26,9 +27,15 @@ export function triggerRequestDrawer(data?: ExtractionData) {
   }
 }
 
-export function triggerViewRequest(requestId: string) {
+/**
+ * Trigger the view-request drawer.
+ * Pass the full `request` object if available — this makes the drawer open
+ * INSTANTLY with real data instead of showing a loading skeleton.
+ */
+export function triggerViewRequest(requestId: string, request?: RequestWithProfile) {
   if (typeof window !== 'undefined') {
-    const event = new CustomEvent(ELK_VIEW_REQUEST_DRAWER, { detail: requestId })
+    const detail = request ? { id: requestId, request } : requestId
+    const event = new CustomEvent(ELK_VIEW_REQUEST_DRAWER, { detail })
     window.dispatchEvent(event)
   }
 }

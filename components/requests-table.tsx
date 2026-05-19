@@ -152,7 +152,8 @@ export const RequestsTable = React.memo(function RequestsTable({
     if (navigateOnRowClick) {
       router.push(`/requests/${req.id}`)
     } else {
-      triggerViewRequest(req.id)
+      // Pass the full request object — drawer opens instantly with real data
+      triggerViewRequest(req.id, req)
       onView?.(req)
     }
   }

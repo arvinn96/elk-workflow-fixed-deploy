@@ -28,21 +28,37 @@ export function GlobalDrawerManager({ userRole }: Props) {
     }
 
     const handleOpenView = async (e: Event) => {
-      const customEvent = e as CustomEvent<string>
-      const requestId = customEvent.detail
-      
-      // PROFESSIONALLY set a "skinny" skeleton request first to show the drawer immediately.
-      // We include current_stage and approval_steps to prevent sub-components from crashing.
-      setSelectedRequest({ 
-        id: requestId, 
-        title: 'Loading details...',
-        status: 'pending',
-        current_stage: 'hod',
-        type: 'project',
-        created_at: new Date().toISOString(),
-        profiles: { full_name: 'Loading...', role: '' },
-        approval_steps: []
-      } as any)
+      // Accept either a plain string requestId OR an object { id, request }
+      const customEvent = e as CustomEvent<string | { id: string; request?: RequestWithProfile }>
+      const detail = customEvent.detail
+
+      let requestId: string
+      let existingData: RequestWithProfile | undefined
+
+      if (typeof detail === 'string') {
+        requestId = detail
+      } else {
+        requestId = detail.id
+        existingData = detail.request
+      }
+
+      // If caller already has list-level data, show it immediately (instant open).
+      // The drawer will still fetch audit_logs in the background.
+      if (existingData) {
+        setSelectedRequest(existingData)
+      } else {
+        // Fallback skeleton for callers that only pass the ID
+        setSelectedRequest({
+          id: requestId,
+          title: 'Loading details...',
+          status: 'pending',
+          current_stage: 'hod',
+          type: 'project',
+          created_at: new Date().toISOString(),
+          profiles: { full_name: 'Loading...', role: '' },
+          approval_steps: []
+        } as any)
+      }
       setViewOpen(true)
     }
 
