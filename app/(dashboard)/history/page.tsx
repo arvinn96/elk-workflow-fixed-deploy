@@ -1,98 +1,72 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { unstable_cache } from 'next/cache'
 import { RequestsTable } from '@/components/requests-table'
-import { History as HistoryIcon, Search, Filter } from 'lucide-react'
+import { History as HistoryIcon } from 'lucide-react'
 import type { RequestWithProfile } from '@/lib/types'
 
-export const dynamic = 'force-dynamic'
+const HISTORY_SELECT = `
+  *,
+  profiles:submitted_by(id, full_name, email, role, department, avatar_url),
+  approval_steps(id, request_id, stage, decision, decided_by, comment, decided_at, created_at,
+    profiles:decided_by(id, full_name, role)
+  )
+`
+
+async function fetchHistoryRequests(userId: string, role: string) {
+  const service = await createServiceClient()
+  const isSuperAdmin = role === 'super_admin'
+  const isUCD = role === 'ucd'
+
+  if (isUCD) {
+    const { data } = await service
+      .from('requests')
+      .select(HISTORY_SELECT)
+      .eq('status', 'completed')
+      .order('updated_at', { ascending: false })
+    return (data as RequestWithProfile[]) || []
+  }
+
+  const approvalQuery = service.from('approval_steps').select('request_id').neq('decision', 'pending')
+  if (!isSuperAdmin) approvalQuery.eq('decided_by', userId)
+  const { data: approvalSteps } = await approvalQuery
+  let allIds = approvalSteps?.map(s => s.request_id) || []
+
+  if (isSuperAdmin) {
+    const { data: auditLogs } = await service
+      .from('audit_logs').select('entity_id').eq('entity_type', 'request').ilike('action', 'ucd_status_%')
+    const ucdIds = auditLogs?.map(l => l.entity_id).filter((id): id is string => id !== null) || []
+    allIds = Array.from(new Set([...allIds, ...ucdIds]))
+  }
+
+  if (allIds.length === 0) return []
+
+  const { data } = await service
+    .from('requests')
+    .select(HISTORY_SELECT)
+    .in('id', allIds)
+    .order('updated_at', { ascending: false })
+
+  return (data as RequestWithProfile[]) || []
+}
 
 export default async function HistoryPage() {
   const supabase = await createClient()
-  const service = await createServiceClient()
   const { data: { user } } = await supabase.auth.getUser()
-
   if (!user) return null
 
-  // 1. Fetch current profile
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single()
-
+  const { data: profile } = await supabase.from('profiles').select('id, role, department').eq('id', user.id).single()
   if (!profile) return null
 
+  // Cache the expensive multi-query fetch for 30 seconds per user
+  const getCachedHistory = unstable_cache(
+    () => fetchHistoryRequests(user.id, profile.role),
+    [`history-${user.id}-${profile.role}`],
+    { revalidate: 30 }
+  )
+
+  const historyRequests = await getCachedHistory()
   const isSuperAdmin = profile.role === 'super_admin'
   const isUCD = profile.role === 'ucd'
-
-  let historyRequests: RequestWithProfile[] = []
-
-  // Logic:
-  // - UCD: Show all 'completed' (DONE) requests globally for management.
-  // - Super Admin: Show all decided/actioned requests globally.
-  // - Others: Show only personal action history.
-
-  if (isUCD) {
-    // For UCD, history strictly shows completed tickets that need management/recall
-    const { data } = await service
-      .from('requests')
-      .select(`
-        *,
-        profiles:submitted_by(id, full_name, email, role, department, avatar_url),
-        approval_steps(id, request_id, stage, decision, decided_by, comment, decided_at, created_at,
-          profiles:decided_by(id, full_name, role)
-        )
-      `)
-      .eq('status', 'completed')
-      .order('updated_at', { ascending: false })
-    
-    historyRequests = (data as RequestWithProfile[]) || []
-  } else {
-    // For Approvers and Super Admin
-    let approvedIds: string[] = []
-    let ucdLogIds: string[] = []
-
-    // Get Approval History
-    const approvalQuery = service
-      .from('approval_steps')
-      .select('request_id')
-      .neq('decision', 'pending')
-    
-    if (!isSuperAdmin) {
-      approvalQuery.eq('decided_by', user.id)
-    }
-
-    const { data: approvalSteps } = await approvalQuery
-    approvedIds = approvalSteps?.map(s => s.request_id) || []
-
-    // Get UCD log history if super admin wants to see deployment audit
-    if (isSuperAdmin) {
-      const { data: auditLogs } = await service
-        .from('audit_logs')
-        .select('entity_id')
-        .eq('entity_type', 'request')
-        .ilike('action', 'ucd_status_%')
-
-      ucdLogIds = auditLogs?.map(l => l.entity_id).filter((id): id is string => id !== null) || []
-    }
-
-    const allHistoryIds = Array.from(new Set([...approvedIds, ...ucdLogIds]))
-
-    if (allHistoryIds.length > 0) {
-      const { data } = await service
-        .from('requests')
-        .select(`
-          *,
-          profiles:submitted_by(id, full_name, email, role, department, avatar_url),
-          approval_steps(id, request_id, stage, decision, decided_by, comment, decided_at, created_at,
-            profiles:decided_by(id, full_name, role)
-          )
-        `)
-        .in('id', allHistoryIds)
-        .order('updated_at', { ascending: false })
-
-      historyRequests = (data as RequestWithProfile[]) || []
-    }
-  }
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-10">

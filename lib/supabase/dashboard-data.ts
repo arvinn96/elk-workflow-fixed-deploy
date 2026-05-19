@@ -3,6 +3,7 @@
 // render tree share a single DB result instead of firing duplicate queries.
 
 import { cache } from 'react'
+import { unstable_cache } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { REQUEST_LIST_SELECT } from '@/lib/supabase/selects'
 
@@ -118,12 +119,11 @@ export const getLayoutNotifications = cache(async (profile: any) => {
  * This creates a SINGLE Supabase client and runs ALL queries in parallel,
  * eliminating multiple createClient()/cookies() overhead.
  */
-export const getSuperAdminDashboardData = cache(async (profile: any) => {
+async function _getSuperAdminDashboardData(profile: any) {
   const t0 = performance.now()
   const supabase = await createClient()
 
   // Fire ALL queries in parallel — one client, one cookies() call
-  // We reuse the getLayoutNotifications logic by calling it here (it's cached!)
   const [rpcResult, recentResult, notifications] = await Promise.all([
     supabase.rpc('get_dashboard_stats'),
     supabase.from('requests')
@@ -151,4 +151,14 @@ export const getSuperAdminDashboardData = cache(async (profile: any) => {
     recentRequests: recentResult.data ?? [],
     notifications,
   }
+}
+
+// Cache dashboard data for 30 seconds across requests — subsequent navigations are instant
+export const getSuperAdminDashboardData = cache(async (profile: any) => {
+  const cached = unstable_cache(
+    () => _getSuperAdminDashboardData(profile),
+    [`dashboard-super-admin-${profile.id}`],
+    { revalidate: 30 }
+  )
+  return cached()
 })
